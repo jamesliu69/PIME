@@ -34,6 +34,33 @@
 ; https://nsis.sourceforge.io/Inetc_plug-in
 !addplugindir /x86-unicode "inetc\Plugins\x86-unicode"
 
+!macro PIME_REGSVR32 DLL ARGS ARCH ACTION NATIVE64
+	Push $R0
+	Push $R1
+	StrCpy $R1 0
+	ClearErrors
+	!if ${NATIVE64} == 1
+		${DisableX64FSRedirection}
+	!endif
+	ExecWait '"$SYSDIR\regsvr32.exe" ${ARGS} "${DLL}"' $R0
+	${If} ${Errors}
+		StrCpy $R1 1
+	${EndIf}
+	!if ${NATIVE64} == 1
+		${EnableX64FSRedirection}
+	!endif
+	${If} $R1 != 0
+		MessageBox MB_OK|MB_ICONSTOP "Could not start regsvr32 to ${ACTION} the ${ARCH} PIME text service."
+		Abort
+	${EndIf}
+	${If} $R0 != 0
+		MessageBox MB_OK|MB_ICONSTOP "Could not ${ACTION} the ${ARCH} PIME text service (regsvr32 exit code $R0)."
+		Abort
+	${EndIf}
+	Pop $R1
+	Pop $R0
+!macroend
+
 Unicode true ; turn on Unicode (This requires NSIS 3.0)
 SetCompressor /SOLID lzma ; use LZMA for best compression ratio
 SetCompressorDictSize 16 ; larger dictionary size for better compression ratio
@@ -128,7 +155,7 @@ Function uninstallOldVersion
 			DeleteRegKey HKLM "Software\PIME"
 
 			; Unregister COM objects (NSIS UnRegDLL command is broken and cannot be used)
-			ExecWait '"$SYSDIR\regsvr32.exe" /u /s "$INSTDIR\x86\PIMETextService.dll"'
+			!insertmacro PIME_REGSVR32 "$INSTDIR\x86\PIMETextService.dll" "/u /s" x86 unregister 0
 			; Verify the MD5/SHA1 checksum of 32-bit PIMETextService.dll
 			StrCpy $0 "$INSTDIR\x86\PIMETextService.dll"
 			md5dll::GetMD5File "$0"
@@ -144,7 +171,7 @@ Function uninstallOldVersion
 
 			${If} ${RunningX64}
 				SetRegView 64 ; disable registry redirection and use 64 bit Windows registry directly
-				ExecWait '"$SYSDIR\regsvr32.exe" /u /s "$INSTDIR\x64\PIMETextService.dll"'
+				!insertmacro PIME_REGSVR32 "$INSTDIR\x64\PIMETextService.dll" "/u /s" x64 unregister 1
 				; Verify the MD5/SHA1 checksum of 64-bit PIMETextService.dll
 				StrCpy $0 "$INSTDIR\x64\PIMETextService.dll"
 				md5dll::GetMD5File "$0"
@@ -162,7 +189,7 @@ Function uninstallOldVersion
 			; Handle ARM64 version of PIMETextService.dll
 			${If} ${IsNativeARM64}
 				SetRegView 64 ; For ARM64, use native 64-bit registry view
-				ExecWait '"$SYSDIR\regsvr32.exe" /u /s "$INSTDIR\arm64\PIMETextService.dll"'
+				!insertmacro PIME_REGSVR32 "$INSTDIR\arm64\PIMETextService.dll" "/u /s" ARM64 unregister 1
 				; Verify MD5 checksum to determine if update is needed
 				StrCpy $0 "$INSTDIR\arm64\PIMETextService.dll"
 				md5dll::GetMD5File "$0"
@@ -644,7 +671,7 @@ Section "" Register
 			File "..\build64\PIMETextService\Release\PIMETextService.dll" ; put 64-bit PIMETextService.dll in x64 folder
 		${EndIf}
 		; Register COM objects (NSIS RegDLL command is broken and cannot be used)
-		ExecWait '"$SYSDIR\regsvr32.exe" /s "$INSTDIR\x64\PIMETextService.dll"'
+		!insertmacro PIME_REGSVR32 "$INSTDIR\x64\PIMETextService.dll" "/s" x64 register 1
 	${EndIf}
 
 	${If} ${IsNativeARM64} ; This is a native ARM64 Windows system
@@ -653,7 +680,7 @@ Section "" Register
 			File "..\build_arm64\PIMETextService\Release\PIMETextService.dll" ; put ARM64 PIMETextService.dll in arm64 folder
 		${EndIf}
 		; Register COM objects (NSIS RegDLL command is broken and cannot be used)
-		ExecWait '"$SYSDIR\regsvr32.exe" /s "$INSTDIR\arm64\PIMETextService.dll"'
+		!insertmacro PIME_REGSVR32 "$INSTDIR\arm64\PIMETextService.dll" "/s" ARM64 register 1
 	${EndIf}
 
 	SetOutPath "$INSTDIR\x86"
@@ -661,7 +688,7 @@ Section "" Register
 		File "..\build\PIMETextService\Release\PIMETextService.dll" ; put 32-bit PIMETextService.dll in x86 folder
 	${EndIf}
 	; Register COM objects (NSIS RegDLL command is broken and cannot be used)
-	ExecWait '"$SYSDIR\regsvr32.exe" /s "$INSTDIR\x86\PIMETextService.dll"'
+	!insertmacro PIME_REGSVR32 "$INSTDIR\x86\PIMETextService.dll" "/s" x86 register 0
 
 	; Launch the python server on startup
 	WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Run" "PIMELauncher" "$INSTDIR\PIMELauncher.exe"
@@ -770,14 +797,14 @@ Section "Uninstall"
 	DeleteRegKey HKLM "Software\PIME"
 
 	; Unregister COM objects (NSIS UnRegDLL command is broken and cannot be used)
-	ExecWait '"$SYSDIR\regsvr32.exe" /u /s "$INSTDIR\x86\PIMETextService.dll"'
+	!insertmacro PIME_REGSVR32 "$INSTDIR\x86\PIMETextService.dll" "/u /s" x86 unregister 0
 	${If} ${RunningX64}
-		ExecWait '"$SYSDIR\regsvr32.exe" /u /s "$INSTDIR\x64\PIMETextService.dll"'
+		!insertmacro PIME_REGSVR32 "$INSTDIR\x64\PIMETextService.dll" "/u /s" x64 unregister 1
 		RMDir /REBOOTOK /r "$INSTDIR\x64"
 	${EndIf}
 
 	${If} ${IsNativeARM64}
-		ExecWait '"$SYSDIR\regsvr32.exe" /u /s "$INSTDIR\arm64\PIMETextService.dll"'
+		!insertmacro PIME_REGSVR32 "$INSTDIR\arm64\PIMETextService.dll" "/u /s" ARM64 unregister 1
 		RMDir /REBOOTOK /r "$INSTDIR\arm64"
 	${EndIf}
 

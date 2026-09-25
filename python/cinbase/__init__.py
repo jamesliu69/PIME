@@ -25,6 +25,7 @@ import copy
 import ctypes
 import winsound
 import threading
+import traceback
 from ctypes import windll
 from .cin import Cin
 from .rcin import RCin
@@ -3305,8 +3306,7 @@ class CinBase:
                     cbTS.extendtable = extendtable(fs)
             if reLoadCinTable:
                 cbTS.reLoadCinTable = True
-            loadCinFile = LoadCinTable(cbTS, CinTable)
-            loadCinFile.start()
+            loadCinTable(cbTS, CinTable, force=True)
         else:
             if not cbTS.cin == CinTable.cin:
                 cbTS.cin = CinTable.cin
@@ -3352,19 +3352,67 @@ class LoadPhraseData(threading.Thread):
             self.PhraseData.loading = False
 
 
+_CIN_TABLE_LOAD_LOCK = threading.RLock()
+
+
+def _ensureCinTableLoadState(CinTable):
+    if not hasattr(CinTable, 'loadComplete'):
+        CinTable.loadComplete = threading.Event()
+        CinTable.loadComplete.set()
+        CinTable.loadingCinType = None
+        CinTable.loadError = None
+
+
+def loadCinTable(cbTS, CinTable, force=False):
+    while True:
+        selectedCinType = cbTS.cfg.selCinType
+        if selectedCinType >= len(cbTS.cinFileList):
+            selectedCinType = 0
+            cbTS.cfg.selCinType = 0
+
+        with _CIN_TABLE_LOAD_LOCK:
+            _ensureCinTableLoadState(CinTable)
+
+            if CinTable.loading:
+                loadComplete = CinTable.loadComplete
+                loadingCinType = CinTable.loadingCinType
+            elif not force and not getattr(cbTS, 'reLoadCinTable', False) and CinTable.curCinType == selectedCinType:
+                cbTS.cin = CinTable.cin
+                return
+            else:
+                LoadCinTable(cbTS, CinTable).start()
+                return
+
+        loadComplete.wait()
+        with _CIN_TABLE_LOAD_LOCK:
+            if not force and loadingCinType == selectedCinType and CinTable.loadError is not None:
+                cbTS.cin = CinTable.cin
+                return
+
+
 class LoadCinTable(threading.Thread):
     def __init__(self, cbTS, CinTable):
         threading.Thread.__init__(self)
         self.cbTS = cbTS
         self.CinTable = CinTable
+        with _CIN_TABLE_LOAD_LOCK:
+            _ensureCinTableLoadState(CinTable)
+            self.shouldLoad = not CinTable.loading
+            if self.shouldLoad:
+                CinTable.loading = True
+                CinTable.loadingCinType = cbTS.cfg.selCinType
+                CinTable.loadError = None
+                CinTable.loadComplete.clear()
 
     def run(self):
-        if DEBUG_MODE:
-            self.cbTS.debug.setStartTimer("LoadCinTable")
+        if not self.shouldLoad:
+            return
 
-        self.CinTable.loading = True
         selCinFile = None
         try:
+            if DEBUG_MODE:
+                self.cbTS.debug.setStartTimer("LoadCinTable")
+
             if self.cbTS.cfg.selCinType >= len(self.cbTS.cinFileList):
                 self.cbTS.cfg.selCinType = 0
             selCinFile = self.cbTS.cinFileList[self.cbTS.cfg.selCinType]
@@ -3374,12 +3422,9 @@ class LoadCinTable(threading.Thread):
                 self.cbTS.reLoadCinTable = False
 
                 if hasattr(self.cbTS, 'cin'):
-                    self.cbTS.cin.__del__()
-                if hasattr(self.CinTable.cin, '__del__'):
-                    self.CinTable.cin.__del__()
-
-                self.cbTS.cin = None
+                    del self.cbTS.cin
                 self.CinTable.cin = None
+                self.CinTable.curCinType = None
 
                 with io.open(jsonPath, 'r', encoding='utf8') as fs:
                     self.cbTS.cin = Cin(fs, self.cbTS.imeDirName, self.cbTS.ignorePrivateUseArea)
@@ -3398,10 +3443,13 @@ class LoadCinTable(threading.Thread):
             self.CinTable.userExtendTable = self.cbTS.cfg.userExtendTable
             self.CinTable.priorityExtendTable = self.cbTS.cfg.priorityExtendTable
             self.CinTable.ignorePrivateUseArea = self.cbTS.cfg.ignorePrivateUseArea
-        except Exception:
-            pass
+        except Exception as error:
+            self.CinTable.loadError = error
+            traceback.print_exc()
         finally:
-            self.CinTable.loading = False
+            with _CIN_TABLE_LOAD_LOCK:
+                self.CinTable.loading = False
+                self.CinTable.loadComplete.set()
 
         if DEBUG_MODE and selCinFile:
             self.cbTS.debug.setEndTimer("LoadCinTable")

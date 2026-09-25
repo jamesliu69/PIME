@@ -20,7 +20,7 @@ import os.path
 import copy
 
 from cinbase import CinBase
-from cinbase import LoadCinTable
+from cinbase import loadCinTable
 from cinbase import LoadRCinTable
 from cinbase import LoadHCinTable
 from cinbase.config import CinBaseConfig
@@ -72,13 +72,7 @@ class ChePhoneticTextService(TextService):
         ]
 
         # 載入輸入法碼表
-        if not CinTable.curCinType == self.cfg.selCinType and not CinTable.loading:
-            loadCinFile = LoadCinTable(self, CinTable)
-            loadCinFile.start()
-        else:
-            while CinTable.loading:
-                continue
-            self.cin = CinTable.cin
+        loadCinTable(self, CinTable)
 
         self.useEndKey = True
         self.autoShowCandWhenMaxChar = True
