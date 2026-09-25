@@ -3128,7 +3128,13 @@ class CinBase:
             cbTS.candPerRow = 1
 
         # 每頁顯示幾個候選字
-        cbTS.candPerPage = cfg.candPerPage
+        try:
+            candPerPage = int(cfg.candPerPage)
+            if candPerPage < 1:
+                candPerPage = 9
+        except (TypeError, ValueError, OverflowError):
+            candPerPage = 9
+        cfg.candPerPage = cbTS.candPerPage = candPerPage
 
         # 設定 UI 外觀
         cbTS.customizeUI(candFontSize = cfg.fontSize,

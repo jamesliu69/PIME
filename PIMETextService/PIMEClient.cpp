@@ -87,9 +87,21 @@ void Client::addKeyEventToRpcRequest(json& request, Ime::KeyEvent& keyEvent) {
 }
 
 bool Client::handleRpcResponse(json& msg, Ime::EditSession* session) {
-	bool success = msg.value("success", false);
+	if (!msg.is_object()) {
+		return false;
+	}
+	auto successValue = msg.find("success");
+	if (successValue == msg.end() || !successValue->is_boolean()) {
+		return false;
+	}
+	bool success = successValue->get<bool>();
 	if (success) {
-		updateStatus(msg, session);
+		try {
+			updateStatus(msg, session);
+		}
+		catch (const json::exception&) {
+			return false;
+		}
 	}
 	return success;
 }
@@ -389,8 +401,9 @@ void Client::onActivate() {
 	req["isKeyboardOpen"] = textService_->isKeyboardOpened();
 
 	json ret;
-	callRpcMethod(req, ret);
-	if (handleRpcResponse(ret)) {
+	if (!callRpcMethod(req, ret) || !handleRpcResponse(ret)) {
+		isActivated_ = false;
+		return;
 	}
 	isActivated_ = true;
 }
