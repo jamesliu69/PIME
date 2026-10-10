@@ -72,6 +72,12 @@ AllowSkipFiles off ; cannot skip a file
 
 !define /file PRODUCT_VERSION "..\version.txt"
 
+; The ARM64 payload is optional, so the installer can also be built on a
+; machine without the ARM64 toolchain (ARM64 support is then skipped).
+!if /FileExists "..\build_arm64\PIMETextService\Release\PIMETextService.dll"
+	!define HAVE_ARM64_DLL
+!endif
+
 !define PRODUCT_UNINST_KEY "Software\Microsoft\Windows\CurrentVersion\Uninstall\PIME"
 !define HOMEPAGE_URL "https://github.com/EasyIME/"
 
@@ -190,6 +196,7 @@ Function uninstallOldVersion
 			${If} ${IsNativeARM64}
 				SetRegView 64 ; For ARM64, use native 64-bit registry view
 				!insertmacro PIME_REGSVR32 "$INSTDIR\arm64\PIMETextService.dll" "/u /s" ARM64 unregister 1
+				!ifdef HAVE_ARM64_DLL
 				; Verify MD5 checksum to determine if update is needed
 				StrCpy $0 "$INSTDIR\arm64\PIMETextService.dll"
 				md5dll::GetMD5File "$0"
@@ -202,6 +209,7 @@ Function uninstallOldVersion
 				${Else}
 					RMDir /REBOOTOK /r "$INSTDIR\arm64"
 				${EndIf}
+				!endif
 			${EndIf}
 
 			; Try to terminate running PIMELauncher and the server process
@@ -332,11 +340,16 @@ Function .onInit
 
 	File "/oname=$PLUGINSDIR\PIMETextService_x86.dll" "..\build\PIMETextService\Release\PIMETextService.dll"
 	File "/oname=$PLUGINSDIR\PIMETextService_x64.dll" "..\build64\PIMETextService\Release\PIMETextService.dll"
+	!ifdef HAVE_ARM64_DLL
 	File "/oname=$PLUGINSDIR\PIMETextService_arm64.dll" "..\build_arm64\PIMETextService\Release\PIMETextService.dll"
+	!endif
 
 	StrCpy $UPDATEX86DLL "True"
 	StrCpy $UPDATEX64DLL "True"
 	StrCpy $UPDATEARM64DLL "True"
+	!ifndef HAVE_ARM64_DLL
+	StrCpy $UPDATEARM64DLL "False"
+	!endif
 
 	StrCpy $INST_PYTHON "False"
 	StrCpy $INST_CINBASE "False"
@@ -674,6 +687,7 @@ Section "" Register
 		!insertmacro PIME_REGSVR32 "$INSTDIR\x64\PIMETextService.dll" "/s" x64 register 1
 	${EndIf}
 
+!ifdef HAVE_ARM64_DLL
 	${If} ${IsNativeARM64} ; This is a native ARM64 Windows system
 		SetOutPath "$INSTDIR\arm64"
 		${If} $UPDATEARM64DLL == "True"
@@ -682,6 +696,7 @@ Section "" Register
 		; Register COM objects (NSIS RegDLL command is broken and cannot be used)
 		!insertmacro PIME_REGSVR32 "$INSTDIR\arm64\PIMETextService.dll" "/s" ARM64 register 1
 	${EndIf}
+!endif
 
 	SetOutPath "$INSTDIR\x86"
 	${If} $UPDATEX86DLL == "True"
@@ -804,7 +819,9 @@ Section "Uninstall"
 	${EndIf}
 
 	${If} ${IsNativeARM64}
+		!ifdef HAVE_ARM64_DLL
 		!insertmacro PIME_REGSVR32 "$INSTDIR\arm64\PIMETextService.dll" "/u /s" ARM64 unregister 1
+		!endif
 		RMDir /REBOOTOK /r "$INSTDIR\arm64"
 	${EndIf}
 
