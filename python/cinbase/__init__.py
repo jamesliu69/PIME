@@ -2608,6 +2608,7 @@ class CinBase:
             elif commandId == 1:
                 self.setOutputSimplifiedChinese(cbTS, not cbTS.outputSimpChinese)
         elif commandType == 1: # 功能開關
+            cfg = cbTS.cfg
             commandItem = cbTS.smenuitems[commandId]
             if commandItem == "fullShapeSymbols":
                 cbTS.fullShapeSymbols = not cbTS.fullShapeSymbols
@@ -2633,6 +2634,11 @@ class CinBase:
                 cbTS.imeReverseLookup = not cbTS.imeReverseLookup
             elif commandItem == "homophoneQuery":
                 cbTS.homophoneQuery = not cbTS.homophoneQuery
+
+            # 記住使用者的選擇，否則重新載入設定或重開輸入法後又會被還原
+            if hasattr(cfg, commandItem):
+                setattr(cfg, commandItem, getattr(cbTS, commandItem))
+                cfg.save()
 
 
     def switchMenuType(self, cbTS, menutype, prevmenutypelist):
@@ -3347,7 +3353,8 @@ class LoadPhraseData(threading.Thread):
             with io.open(phrasePath, 'r', encoding='utf8') as fs:
                 self.PhraseData.phrase = phrase(fs)
         except Exception:
-            pass
+            # 載入失敗時 PhraseData.phrase 會是 None，聯想字詞功能會被停用
+            traceback.print_exc()
         finally:
             self.PhraseData.loading = False
 
