@@ -17,3 +17,4 @@ __pycache__/
 
 # Local code-graph index
 .codegraph/
+.vscode/settings.json
